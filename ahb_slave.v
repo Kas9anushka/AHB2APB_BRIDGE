@@ -107,6 +107,16 @@ function [DATA_WIDTH/8-1:0]gen_strobe;
                     2'b01: gen_strobe = 4'b0010;
                     2'b10: gen_strobe = 4'b0100;
                     2'b11: gen_strobe = 4'b1000;
+                endcase
+            3'b001: 
+                case(addr_lsb[1])
+                    1'b0: gen_strobe = 4'b0011;
+                    1'b1: gen_strobe = 4'b1100;
+                endcase
+                default: gen_strobe = 4'b1111;
+        endcase
+    end
+endfunction
 
 // fsm state register
 always @(posedge HCLK or negedge HRESETn)begin
@@ -123,8 +133,7 @@ always @(posedge HCLK or negedge HRESETn)begin
         hresp_reg <= hresp_next;
 end
 
-// ahb slave fsm with addressphase and data phase
-
+// ahb slave fsm with address phase and data phase
 always @(posedge HCLK or negedge HRESETn)begin
     if(!HRESETn)begin
         latch_addr <= 0;
@@ -223,7 +232,57 @@ always @(*)begin
                 nextstate = S_WAIT;
             end
         end
-        
+        S_WAIT: begin
+            psel = 1'b1;
+            penable = 1'b1;
+            hready_out = 1b0;
+            if(pready)begin
+                if(pslverr)begin
+                    hresp_next = 1'b1;
+                    hready_out = 1'b0;
+                    nextstate = S_WB;
+                end else begin
+                    hready_out = 1'b1;
+                    if(valid_transfer)
+                        nextstate = S_SETUP;
+                    else 
+                        nextstate = S_IDLE;
+                end
+            end else begin
+                nextstate = S_WAIT;
+            end
+        end
+        S_WB: begin
+            hready_out = 1'b1;
+            hresp_next = 1'b1;
+            nextstate = S_IDLE;
+        end
+        default: nextstate = S_IDLE;
+        endcase
+end
+// capture prdata into hrdata when apb read completes
+always @(posedge HCLK or negedge HRESETn)begin
+    if(!HRESETn)begin
+        HRDATA <= 0;
+    end else begin
+        case (state)
+            S_ENABLE: begin
+                if(pready && !pslverr && !latch_write)
+                    HRDATA <= prdata;
+            end
+            S_WAIT: begin
+                if(pready && !pslverr && !latch_write)
+                    HRDATA <= prdata;
+            end
+            default : ;
+        endcase
+    end
+end
+endmodule
+
+
+
+
 
 
 
