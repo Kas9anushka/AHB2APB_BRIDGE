@@ -10,13 +10,12 @@ module CDC_REQUEST #(
     input  wire                      HCLK, // global ahb side active posedge clk
     input  wire                      HRESETn, // global active low reset in ahb side
 
-    input  wire                      req_valid, // valid transaction signal from ahb capture
+    input  wire                      apb_start, // valid transaction signal from ahb capture
     input  wire [ADDR_WIDTH-1:0]     req_addr,  // valid captured address
     input  wire                      req_write, // valid captured write signal
     input  wire [DATA_WIDTH-1:0]     req_wdata, // valid captured HWDATA 
     input  wire [STRB_WIDTH-1:0]     req_strb, // pstrb signal generated in ahb captured
     input  wire [N_SLAVES-1:0]       slave_sel, // which slave is active 
-    input  wire                      decode_err, // invalid address for slave mapping 
 
     // signals coming back from pclk side to hclk side 
     output reg                       rsp_valid, // indicates that the APB transaction has completed and a valid response is available
@@ -35,7 +34,6 @@ module CDC_REQUEST #(
     output reg [DATA_WIDTH-1:0]      pclk_wdata,
     output reg [STRB_WIDTH-1:0]      pclk_strb,
     output reg [N_SLAVES-1:0]        pclk_slave_sel,
-    output reg                       pclk_decode_err,
 
     input  wire                      pclk_done, // Indicates the APB transaction has completed
     input  wire [DATA_WIDTH-1:0]     pclk_rdata, // Contains the read data received from the APB slave (PRDATA)
@@ -50,7 +48,6 @@ reg                  hreq_write;
 reg [DATA_WIDTH-1:0] hreq_wdata;
 reg [STRB_WIDTH-1:0] hreq_strb;
 reg [N_SLAVES-1:0]   hreq_slave_sel;
-reg                  hreq_decode_err;
 
 reg req_data_pending; //one-cycle HCLK-domain staging flag that ensures the request data is captured and stable before req_toggle announces the new request
 
@@ -113,17 +110,15 @@ always @(posedge HCLK or negedge HRESETn) begin
     hreq_wdata      <= {DATA_WIDTH{1'b0}};
     hreq_strb       <= {STRB_WIDTH{1'b0}};
     hreq_slave_sel  <= {N_SLAVES{1'b0}};
-    hreq_decode_err <= 1'b0;
 	end
 	else begin
     // accept a new AHB request only when its valid, previous request has already completed and no request data is currently waiting to be announced
-		if (req_valid &&(req_toggle ==rsp_sync) && !req_data_pending)begin 
+		if (apb_start &&(req_toggle ==rsp_sync) && !req_data_pending)begin 
 			hreq_addr       <= req_addr;
       hreq_write      <= req_write;
       hreq_wdata      <= req_wdata;
       hreq_strb       <= req_strb;
       hreq_slave_sel  <= slave_sel;
-      hreq_decode_err <= decode_err;
       // delay the request toggle by one HCLK cycle to become stabel before crossing.
 			req_data_pending <= 1'b1;
     end
@@ -145,7 +140,6 @@ always @(posedge PCLK or negedge PRESETn) begin
     pclk_wdata      <= {DATA_WIDTH{1'b0}};
     pclk_strb       <= {STRB_WIDTH{1'b0}};
     pclk_slave_sel  <= {N_SLAVES{1'b0}};
-    pclk_decode_err <= 1'b0;
 	end
   else begin
 		pclk_start <= 1'b0;
@@ -156,7 +150,6 @@ always @(posedge PCLK or negedge PRESETn) begin
       pclk_wdata      <= hreq_wdata;
       pclk_strb       <= hreq_strb;
       pclk_slave_sel  <= hreq_slave_sel;
-      pclk_decode_err <= hreq_decode_err;
 			pclk_start <= 1'b1; // generated for one PCLK cycle to tell the APB side logic to start processing the tranaction
     end
   end
